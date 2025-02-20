@@ -6,8 +6,10 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 # 🔹 Carregar credenciais do GitHub Secrets
 google_credentials = os.getenv("GOOGLE_CREDENTIALS_JSON")
-creds_dict = json.loads(google_credentials)
+if not google_credentials:
+    raise ValueError("❌ ERRO: A variável GOOGLE_CREDENTIALS_JSON está vazia! Verifique os Secrets no GitHub.")
 
+creds_dict = json.loads(google_credentials)
 # 🔹 Autenticação no Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
