@@ -1,52 +1,53 @@
 import os
+import json
 import requests
 import gspread
-import json
-import time
 from oauth2client.service_account import ServiceAccountCredentials
 
-# Configurações
-API_KEY = "54993e8a003c7ffd9952fb14a46e848e"  # Substitua pela sua API KEY
-SHEET_ID = "1mLLCMV1kZfoGSb2aLTt3Ebgq3foX6tA2M84UGogMlBs"  # Substitua pelo ID da planilha
-EAD_API_URL = "https://ead.conhecimentointegrado.com.br/api/1/sales"  # URL da API
-
-# Autenticação com Google Sheets
+# 🔹 Carrega as credenciais da API do Google Sheets
+creds_json = json.loads(os.environ.get("GOOGLE_CREDENTIALS_JSON", "{}"))
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds_json = json.loads(os.environ.get("GOOGLE_CREDENTIALS_JSON", "{}"))  # Pega as credenciais do GitHub Secrets
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
 client = gspread.authorize(creds)
+
+# 🔹 Configurações da API EAD e Google Sheets
+API_KEY = os.environ.get("EAD_API_KEY", "")
+SHEET_ID = os.environ.get("SHEET_ID", "")
+EAD_API_URL = "https://ead.conhecimentointegrado.com.br/api/1/sales"
+HEADERS = {
+    "accept": "application/json",
+    "x-auth-token": API_KEY
+}
+
+# 🔹 Conectar ao Google Sheets
 sheet = client.open_by_key(SHEET_ID).sheet1
 
-# Função para buscar as transações
+# 🔹 Função para buscar transações
 def get_transactions():
-    headers = {
-        "Accept": "application/json",
-        "x-auth-token": API_KEY  # Token de autenticação
-    }
-    response = requests.get(EAD_API_URL, headers=headers)
+    response = requests.get(EAD_API_URL, headers=HEADERS)
     
     if response.status_code == 200:
         return response.json()
     else:
-        print(f"Erro ao buscar transações: {response.status_code} - {response.text}")
+        print(f"❌ Erro ao buscar dados: {response.status_code}")
         return []
 
-# Atualiza a planilha com os dados das transações
+# 🔹 Função para salvar dados na planilha
 def update_sheet():
     transactions = get_transactions()
-    
+
     if not transactions:
         print("Nenhuma transação encontrada.")
         return
 
-    # Adiciona cabeçalhos se a planilha estiver vazia
+    # Adiciona cabeçalho se a planilha estiver vazia
     if not sheet.get_all_values():
         sheet.append_row(["ID Venda", "ID Transação", "Produto", "Valor Pago", "Valor Líquido", "Taxas", "Cupom", "Comissão Professor"])
 
-    # Prepara os dados para serem enviados em lote
-    rows_to_add = []
+    # Prepara os dados para escrita em lote
+    data_to_write = []
     for transaction in transactions:
-        row = [
+        data_to_write.append([
             transaction.get("vendas_id", ""),
             transaction.get("transacao_id", ""),
             transaction.get("produto_id", ""),
@@ -55,14 +56,12 @@ def update_sheet():
             transaction.get("taxas", ""),
             transaction.get("cupom", ""),
             transaction.get("comissao_professor", "")
-        ]
-        rows_to_add.append(row)
+        ])
+    
+    # Evita múltiplas requisições à API do Google Sheets
+    sheet.append_rows(data_to_write)
+    print(f"✅ {len(data_to_write)} transações adicionadas à planilha!")
 
-    # Escreve todas as linhas de uma vez (reduzindo requisições)
-    if rows_to_add:
-        sheet.append_rows(rows_to_add)
-        print(f"{len(rows_to_add)} transações adicionadas à planilha.")
-
-# Executa o script
+# 🔹 Executar o script
 if __name__ == "__main__":
     update_sheet()
