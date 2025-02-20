@@ -4,27 +4,36 @@ import requests
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# 🌐 Configuração da API e Planilha
+# ============================================================
+# Configurações da API e da planilha
+# ============================================================
 EAD_API_URL = "https://ead.conhecimentointegrado.com.br/api/1/sales"
-EAD_API_KEY = os.getenv("EAD_API_KEY")
-SHEET_ID = os.getenv("SHEET_ID")
-GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
+EAD_API_KEY = os.getenv("EAD_API_KEY")         # Sua chave da API (configurada como variável de ambiente ou secret)
+SHEET_ID = os.getenv("SHEET_ID")               # ID da sua planilha do Google Sheets
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Conteúdo do arquivo JSON das credenciais
 
-# 🚀 1. Verificação das credenciais
+# ============================================================
+# Verificação das credenciais necessárias
+# ============================================================
 if not GOOGLE_CREDENTIALS_JSON:
-    raise ValueError("🔴 ERRO: A variável GOOGLE_CREDENTIALS_JSON está vazia! Verifique os Secrets no GitHub.")
+    raise ValueError("ERRO: A variável GOOGLE_CREDENTIALS_JSON está vazia! Verifique seus Secrets.")
 
-# 📂 2. Autenticação na API do Google Sheets
+# ============================================================
+# Autenticação no Google Sheets
+# ============================================================
 try:
     creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
+    # Acessa a primeira aba da planilha (você pode mudar para outra aba se necessário)
     sheet = client.open_by_key(SHEET_ID).sheet1
 except Exception as e:
-    raise ValueError(f"🔴 ERRO: Falha ao conectar ao Google Sheets! {e}")
+    raise ValueError(f"ERRO ao conectar ao Google Sheets: {e}")
 
-# 🔄 3. Função para buscar transações da API
+# ============================================================
+# Função para buscar transações da API EAD
+# ============================================================
 def get_transactions():
     headers = {
         "accept": "application/json",
@@ -33,33 +42,40 @@ def get_transactions():
     try:
         response = requests.get(EAD_API_URL, headers=headers)
         if response.status_code == 200:
-            transactions = response.json()
-            if not transactions:
-                print("⚠️ Nenhuma transação encontrada.")
+            data = response.json()
+            # Se os dados estiverem encapsulados na chave "data", extraímos eles
+            if isinstance(data, dict) and "data" in data:
+                transactions = data.get("data", [])
+            else:
+                transactions = data
+            print("DEBUG: Dados da API:", transactions)
             return transactions
         else:
-            print(f"🔴 ERRO ao buscar dados: {response.status_code} - {response.text}")
+            print(f"ERRO: Código {response.status_code} - {response.text}")
             return []
     except Exception as e:
-        print(f"🔴 ERRO: Falha ao conectar à API: {e}")
+        print(f"ERRO ao conectar à API: {e}")
         return []
 
-# 📝 4. Função para escrever os dados na planilha
+# ============================================================
+# Função para atualizar a planilha com as transações
+# ============================================================
 def update_sheet():
     transactions = get_transactions()
     if not transactions:
-        print("⚠️ Nenhuma transação encontrada para escrever na planilha.")
+        print("Nenhuma transação encontrada para atualizar a planilha.")
         return
 
-    # ✅ Adiciona cabeçalhos apenas se a planilha estiver vazia
+    # Se a planilha estiver vazia, adiciona o cabeçalho
     if not sheet.get_all_values():
-        headers = ["ID Venda", "ID Transação", "Produto", "Valor Pago", "Valor Líquido", "Taxas", "Cupom", "Comissão Professor"]
-        sheet.append_row(headers)
+        cabeçalhos = ["ID Venda", "ID Transação", "Produto", "Valor Pago", "Valor Líquido", "Taxas", "Cupom", "Comissão Professor"]
+        sheet.append_row(cabeçalhos)
+        print("DEBUG: Cabeçalhos adicionados na planilha.")
 
-    # 🗂️ Converte os dados para lista antes de escrever
-    rows = []
+    # Prepara os dados a serem inseridos (ajuste os nomes dos campos conforme a estrutura retornada pela API)
+    linhas = []
     for transaction in transactions:
-        rows.append([
+        linha = [
             transaction.get("vendas_id", ""),
             transaction.get("transacao_id", ""),
             transaction.get("produto_id", ""),
@@ -68,15 +84,21 @@ def update_sheet():
             transaction.get("taxas", ""),
             transaction.get("cupom", ""),
             transaction.get("comissao_professor", "")
-        ])
+        ]
+        linhas.append(linha)
 
-    # ✅ Escreve todas as transações em um único lote (evita erro de cota)
+    # Insere todas as linhas de uma vez para evitar exceder a cota de requisições
     try:
-        sheet.append_rows(rows)
-        print(f"✅ {len(rows)} transações adicionadas à planilha!")
+        sheet.append_rows(linhas)
+        print(f"DEBUG: {len(linhas)} transações adicionadas à planilha.")
+        # Lê os dados da planilha para confirmar a inserção
+        all_data = sheet.get_all_values()
+        print("DEBUG: Conteúdo atual da planilha:", all_data)
     except Exception as e:
-        print(f"🔴 ERRO ao escrever na planilha: {e}")
+        print(f"ERRO ao escrever na planilha: {e}")
 
-# 🚀 Executa o script
+# ============================================================
+# Execução do script
+# ============================================================
 if __name__ == "__main__":
     update_sheet()
