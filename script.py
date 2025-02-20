@@ -27,27 +27,24 @@ try:
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-    # Acessa a primeira aba (sheet1). Se quiser outra aba, use worksheet("NomeAba").
     sheet = client.open_by_key(SHEET_ID).sheet1
 except Exception as e:
     raise ValueError(f"ERRO ao conectar ao Google Sheets: {e}")
 
 # ============================================================
 # Função para buscar TODAS as transações dos últimos 30 dias
-# usando paginação (limit/offset) e data_inicio/data_fim
 # ============================================================
 def get_sales_last_30_days():
     all_sales = []
     limit = 1000
     offset = 0
-    
+
     # Calcula data de hoje e 30 dias atrás
     today = datetime.date.today()
     data_fim = today.strftime("%Y-%m-%d")
     data_inicio = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
 
     while True:
-        # Monta a URL com parâmetros de paginação e intervalo de datas
         url = (
             f"{EAD_API_URL}?paginate=1"
             f"&limit={limit}"
@@ -62,29 +59,34 @@ def get_sales_last_30_days():
         }
 
         response = requests.get(url, headers=headers)
+
+        # Verifica se a API retornou erro
         if response.status_code != 200:
             print(f"ERRO {response.status_code}: {response.text}")
             break
 
         data = response.json()
-        
-        # Se a resposta tiver "data": [...], extraímos
-        if isinstance(data, dict) and "data" in data:
-            current_sales = data["data"]
-        else:
-            current_sales = data  # Ajuste conforme a estrutura real do JSON
 
-        if not current_sales:
-            print("Não há mais vendas nas próximas páginas.")
+        # Verifica se a resposta contém "data", caso contrário, é um erro
+        if not isinstance(data, dict) or "data" not in data:
+            print(f"⚠️ ERRO: Resposta inesperada da API → {data}")
             break
 
-        all_sales.extend(current_sales)
-        print(f"OFFSET {offset} → Recebidas {len(current_sales)} vendas.")
-        
+        current_sales = data["data"]
+
+        # Verifica se realmente há transações
+        if not isinstance(current_sales, list) or not current_sales:
+            print("🚫 Nenhuma venda encontrada ou estrutura inválida.")
+            break
+
+        # Filtra apenas objetos do tipo dicionário (evita erro 'get' em strings)
+        filtered_sales = [sale for sale in current_sales if isinstance(sale, dict)]
+        all_sales.extend(filtered_sales)
+
+        print(f"📌 OFFSET {offset} → Recebidas {len(filtered_sales)} vendas.")
         offset += limit
 
-    # (Opcional) Ordenar do mais recente para o mais antigo
-    # Se o campo da data for "data_transacao" ou outro, ajuste aqui:
+    # Ordenação segura (evita erro caso existam valores inválidos)
     all_sales.sort(key=lambda x: x.get("data_transacao", ""), reverse=True)
 
     return all_sales
@@ -95,15 +97,14 @@ def get_sales_last_30_days():
 def update_sheet_30_days():
     sales = get_sales_last_30_days()
     if not sales:
-        print("Nenhuma venda encontrada nos últimos 30 dias.")
+        print("🚫 Nenhuma venda encontrada nos últimos 30 dias.")
         return
 
     # Limpa a aba (opcional) para evitar duplicados
-    # Se quiser manter histórico, comente as duas linhas abaixo.
     sheet.clear()
-    print("Planilha limpa antes de escrever dados atualizados.")
+    print("📝 Planilha limpa antes de escrever dados atualizados.")
 
-    # Cabeçalhos (ajuste conforme os campos retornados pela API)
+    # Cabeçalhos
     headers = [
         "ID Venda",
         "Transação",
@@ -116,7 +117,6 @@ def update_sheet_30_days():
         "Status",
         "Nome Aluno",
         "Email",
-        # etc... adicione se houver mais campos
     ]
     sheet.append_row(headers)
 
@@ -135,15 +135,20 @@ def update_sheet_30_days():
             sale.get("status_transacao", ""),
             sale.get("nome_aluno", ""),
             sale.get("email", ""),
-            # etc... se precisar de mais campos
         ])
 
     # Escreve tudo de uma vez (evita limite de cota)
     sheet.append_rows(rows)
-    print(f"{len(rows)} vendas dos últimos 30 dias adicionadas à planilha!")
+    print(f"✅ {len(rows)} vendas dos últimos 30 dias adicionadas à planilha!")
 
 # ============================================================
-# Execução do script
+# Execução automática a cada 30 minutos
 # ============================================================
+import time
+
 if __name__ == "__main__":
-    update_sheet_30_days()
+    while True:
+        print("🔄 Atualizando planilha...")
+        update_sheet_30_days()
+        print("⏳ Aguardando 30 minutos para a próxima atualização...")
+        time.sleep(1800)  # Espera 1800 segundos (30 minutos)
