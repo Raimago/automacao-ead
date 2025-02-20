@@ -22,33 +22,34 @@ API_KEY = os.getenv("EAD_API_KEY")
 
 # 🔹 Função para buscar transações da API
 def get_transactions():
-    headers = {"Authorization": f"Bearer {API_KEY}"}
-    response = requests.get(EAD_API_URL, headers=headers)
+    headers = {
+        "x-auth-token": API_KEY,
+        "accept": "application/json"
+    }
+    
+    all_transactions = []
+    page = 1  # Começamos pela página 1
 
-    if response.status_code == 200:
-        return response.json().get("data", [])
-    else:
-        print(f"Erro na API: {response.status_code} - {response.text}")
-        return []
+    while True:
+        url = f"{EAD_API_URL}?page={page}"
+        response = requests.get(url, headers=headers)
 
-# 🔹 Função para atualizar a planilha
-def update_sheet():
-    transactions = get_transactions()
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                if not data:
+                    break  # Se a resposta estiver vazia, não há mais páginas
 
-    if transactions:
-        for transaction in transactions:
-            sheet.append_row([
-                transaction.get("id"),
-                transaction.get("data"),
-                transaction.get("valor"),
-                transaction.get("status"),
-                transaction["cliente"].get("nome")
-            ])
-        print("✅ Planilha atualizada!")
-    else:
-        print("⚠️ Nenhuma transação encontrada.")
+                all_transactions.extend(data)  # Adiciona os dados da página atual
+                page += 1  # Passa para a próxima página
 
-# 🔹 Executar o script
-if __name__ == "__main__":
-    update_sheet()
+            except json.JSONDecodeError:
+                print("⚠️ ERRO: A API retornou uma resposta inválida.")
+                print("Resposta da API:", response.text)
+                break
+        else:
+            print(f"❌ ERRO: API retornou código {response.status_code}.")
+            print("Resposta da API:", response.text)
+            break
 
+    return all_transactions
