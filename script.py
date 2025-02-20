@@ -2,6 +2,7 @@ import os
 import requests
 import gspread
 import json
+import time
 from oauth2client.service_account import ServiceAccountCredentials
 
 # Configurações
@@ -42,9 +43,10 @@ def update_sheet():
     if not sheet.get_all_values():
         sheet.append_row(["ID Venda", "ID Transação", "Produto", "Valor Pago", "Valor Líquido", "Taxas", "Cupom", "Comissão Professor"])
 
-    # Adiciona os dados das transações na planilha
+    # Prepara os dados para serem enviados em lote
+    rows_to_add = []
     for transaction in transactions:
-        sheet.append_row([
+        row = [
             transaction.get("vendas_id", ""),
             transaction.get("transacao_id", ""),
             transaction.get("produto_id", ""),
@@ -53,9 +55,13 @@ def update_sheet():
             transaction.get("taxas", ""),
             transaction.get("cupom", ""),
             transaction.get("comissao_professor", "")
-        ])
-    
-    print("Planilha atualizada com sucesso!")
+        ]
+        rows_to_add.append(row)
+
+    # Escreve todas as linhas de uma vez (reduzindo requisições)
+    if rows_to_add:
+        sheet.append_rows(rows_to_add)
+        print(f"{len(rows_to_add)} transações adicionadas à planilha.")
 
 # Executa o script
 if __name__ == "__main__":
