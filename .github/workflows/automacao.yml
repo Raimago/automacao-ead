@@ -1,15 +1,15 @@
 name: Automação EAD
 
 on:
-  workflow_dispatch:  # Permite rodar manualmente
+  workflow_dispatch:  # Para rodar manualmente
   schedule:
-    - cron: "0 */4 * * *"  # Executa a cada 4 horas
+    - cron: "0 */4 * * *"  # A cada 4 horas (exemplo)
 
 jobs:
   executar-script:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar código do repositório
+      - name: Baixar código
         uses: actions/checkout@v3
 
       - name: Configurar Python
@@ -18,11 +18,14 @@ jobs:
           python-version: '3.9'
 
       - name: Instalar dependências
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install gspread oauth2client requests
 
       - name: Executar script
         env:
           EAD_API_KEY: ${{ secrets.EAD_API_KEY }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-        run: python script.py
+        run: |
+          python script.py
