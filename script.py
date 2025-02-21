@@ -39,13 +39,14 @@ except Exception as e:
 # ============================================================
 def get_sales_last_14_days():
     all_sales = []
-    limit = 10  # Reduzido para debug mais rápido
+    limit = 10
     offset = 0
+    total_ignoradas = 0
 
     # Calcula a data de hoje e 14 dias atrás
     today = datetime.datetime.now()
     fourteen_days_ago = today - datetime.timedelta(days=14)
-    
+
     # Formata datas para a API
     data_inicio = fourteen_days_ago.strftime("%Y-%m-%d")
     data_fim = today.strftime("%Y-%m-%d")
@@ -61,19 +62,19 @@ def get_sales_last_14_days():
         print(f"🌐 Consultando API: {url}")
 
         try:
-            start_time = time.time()  # Marca o tempo antes da requisição
-            response = requests.get(url, headers=headers, timeout=10)  # Timeout de 10 segundos
-            end_time = time.time()  # Marca o tempo após resposta
+            start_time = time.time()
+            response = requests.get(url, headers=headers, timeout=10)
+            end_time = time.time()
             
-            response.raise_for_status()  # Levanta erro se houver problema
+            response.raise_for_status()
             data = response.json()
             
             print(f"📩 Resposta da API recebida (Status {response.status_code}) em {end_time - start_time:.2f} segundos")
             print(f"📊 Total de registros recebidos: {len(data.get('rows', []))}")
         except requests.exceptions.Timeout:
-            print("❌ ERRO: A API demorou muito para responder (Timeout de 10s). Tentando novamente...")
-            time.sleep(5)  # Espera 5 segundos antes de tentar novamente
-            continue  # Recomeça o loop
+            print("❌ ERRO: A API demorou muito para responder. Tentando novamente...")
+            time.sleep(5)
+            continue
         except requests.exceptions.RequestException as e:
             print(f"❌ ERRO na requisição da API: {e}")
             break
@@ -81,29 +82,33 @@ def get_sales_last_14_days():
         # Verifica se a resposta contém "rows"
         current_sales = data.get("rows", [])
 
-        # Verifica se há transações
         if not current_sales:
             print("🚫 Nenhuma venda encontrada ou fim dos registros.")
             break
 
-        # Aplica o filtro e mantém apenas os campos necessários
         filtered_sales = []
         for sale in current_sales:
             data_conclusao_str = sale.get("data_conclusao", "")
 
             # Verifica se a data está correta
+            if data_conclusao_str is None:
+                print(f"⚠️ Venda ignorada: Transação ID {sale.get('transacao_id')} sem data_conclusao.")
+                total_ignoradas += 1
+                continue
+
             try:
                 data_conclusao = datetime.datetime.strptime(data_conclusao_str, "%Y-%m-%d %H:%M:%S")
             except (TypeError, ValueError):
-                print(f"⚠️ Ignorando venda com data inválida: {data_conclusao_str}")
-                continue  # Pula se a data estiver errada
+                print(f"⚠️ Venda ignorada: Transação ID {sale.get('transacao_id')} com data inválida: {data_conclusao_str}")
+                total_ignoradas += 1
+                continue
 
-            # Aplica os filtros corretos
+            # Aplica os filtros
             if (
                 sale.get("tipo_pagamento") in [1, 2] and
                 sale.get("status_transacao") == 2 and
                 sale.get("gateway") == 6 and
-                data_conclusao >= fourteen_days_ago  # Garante que é dos últimos 14 dias
+                data_conclusao >= fourteen_days_ago
             ):
                 filtered_sales.append({
                     "vendas_id": sale.get("vendas_id"),
@@ -121,13 +126,16 @@ def get_sales_last_14_days():
 
         all_sales.extend(filtered_sales)
         print(f"📌 OFFSET {offset} → Vendas filtradas: {len(filtered_sales)}")
-        
-        # Se o número de vendas retornadas for menor que o limite, interrompe
+
         if len(current_sales) < limit:
             print("✅ Todos os registros foram processados!")
             break
 
-        offset += limit  # Avança para a próxima página de resultados
+        offset += limit
+
+    print(f"🔍 Resumo da execução:")
+    print(f"   ✅ Total de vendas filtradas: {len(all_sales)}")
+    print(f"   ⚠️ Vendas ignoradas (sem data_conclusao ou inválidas): {total_ignoradas}")
 
     return all_sales
 
@@ -140,4 +148,4 @@ if __name__ == "__main__":
         vendas = get_sales_last_14_days()
         print(f"✅ Total de vendas processadas: {len(vendas)}")
         print("⏳ Aguardando 4 horas para a próxima atualização...")
-        time.sleep(14400)  # Espera 14400 segundos (4 horas)
+        time.sleep(14400)
