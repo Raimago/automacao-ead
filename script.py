@@ -33,17 +33,17 @@ except Exception as e:
     raise ValueError(f"ERRO ao conectar ao Google Sheets: {e}")
 
 # ============================================================
-# Função para buscar TODAS as transações dos últimos 30 dias
+# Função para buscar as transações dos últimos 14 dias
 # ============================================================
-def get_sales_last_30_days():
+def get_sales_last_14_days():
     all_sales = []
     limit = 1000
     offset = 0
 
-    # Calcula data de hoje e 30 dias atrás
+    # Calcula data de hoje e 14 dias atrás
     today = datetime.date.today()
     data_fim = today.strftime("%Y-%m-%d")
-    data_inicio = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+    data_inicio = (today - datetime.timedelta(days=14)).strftime("%Y-%m-%d")
 
     while True:
         url = (
@@ -97,107 +97,86 @@ def get_sales_last_30_days():
     return all_sales
 
 # ============================================================
-# Função para escrever as vendas na planilha
+# Função para limpar registros antigos e adicionar novos
 # ============================================================
-def update_sheet_30_days():
-    sales = get_sales_last_30_days()
+def update_sheet_14_days():
+    sales = get_sales_last_14_days()
     if not sales:
-        print("🚫 Nenhuma venda encontrada nos últimos 30 dias.")
+        print("🚫 Nenhuma venda encontrada nos últimos 14 dias.")
         return
 
-    # Limpa a aba antes de escrever os dados
-    sheet.clear()
-    print("📝 Planilha limpa antes de escrever dados atualizados.")
+    # Lê a planilha atual
+    existing_data = sheet.get_all_values()
+    existing_headers = existing_data[0] if existing_data else []
+    existing_rows = existing_data[1:] if len(existing_data) > 1 else []
 
-    # Cabeçalhos - Agora inclui TODOS os campos da API
-    headers = [
-        "ID Venda",
-        "Transação",
-        "Produto",
-        "Valor",
-        "Valor Líquido",
-        "Taxas",
-        "Cupom",
-        "Lucro EAD",
-        "Nome Afiliado",
-        "Lucro Afiliado",
-        "Data Transação",
-        "Data Conclusão",
-        "Tipo Pagamento",
-        "Status Transação",
-        "Aluno ID",
-        "Nome Aluno",
-        "Email",
-        "Faturamento Nome",
-        "Faturamento Email",
-        "Faturamento Documento",
-        "Faturamento Telefone",
-        "Faturamento Endereço",
-        "Faturamento Número",
-        "Faturamento Complemento",
-        "Faturamento Bairro",
-        "Faturamento CEP",
-        "Faturamento Cidade",
-        "Faturamento UF",
-        "Vendedor ID",
-        "Nome Vendedor",
-        "Tipo Venda",
-        "Gateway",
-        "Origem",
-        "UTMs URL"
-    ]
-    sheet.append_row(headers)
+    # Se a planilha estiver vazia, cria cabeçalhos
+    if not existing_headers:
+        headers = [
+            "Transação ID",
+            "Valor Pago",
+            "Lucro EAD",
+            "Data Transação",
+            "Tipo Pagamento",
+            "Nome",
+            "Email",
+            "Gateway",
+            "Tipo Venda",
+            "Produto ID"
+        ]
+        sheet.append_row(headers)
 
-    # Monta as linhas com todos os campos
-    rows = []
+    # Converte os dados existentes para dicionário para facilitar a comparação
+    existing_transactions = {row[0]: row for row in existing_rows}  # Transação ID como chave
+
+    # Cria lista para atualização
+    rows_to_update = []
     for sale in sales:
-        rows.append([
-            sale.get("vendas_id", ""),
-            sale.get("transacao_id", ""),
-            sale.get("produto_id", ""),
-            sale.get("valor", ""),
-            sale.get("valor_liquido", ""),
-            sale.get("taxas", ""),
-            sale.get("cupom", ""),
+        transacao_id = sale.get("transacao_id", "")
+        
+        # Se a transação já estiver na planilha, não adiciona
+        if transacao_id in existing_transactions:
+            continue
+
+        rows_to_update.append([
+            transacao_id,
+            sale.get("valor_pago", ""),
             sale.get("lucro_ead", ""),
-            sale.get("nome_afiliado", ""),
-            sale.get("lucro_afiliado", ""),
             sale.get("data_transacao", ""),
-            sale.get("data_conclusao", ""),
             sale.get("tipo_pagamento", ""),
-            sale.get("status_transacao", ""),
-            sale.get("aluno_id", ""),
-            sale.get("nome_aluno", ""),
+            sale.get("nome", ""),
             sale.get("email", ""),
-            sale.get("faturamento_nome", ""),
-            sale.get("faturamento_email", ""),
-            sale.get("faturamento_documento", ""),
-            sale.get("faturamento_telefone", ""),
-            sale.get("faturamento_endereco", ""),
-            sale.get("faturamento_numero", ""),
-            sale.get("faturamento_complemento", ""),
-            sale.get("faturamento_bairro", ""),
-            sale.get("faturamento_cep", ""),
-            sale.get("faturamento_cidade", ""),
-            sale.get("faturamento_uf", ""),
-            sale.get("vendedor_id", ""),
-            sale.get("nome_vendedor", ""),
-            sale.get("tipo_venda", ""),
             sale.get("gateway", ""),
-            sale.get("origem", ""),
-            sale.get("utms_url", "")
+            sale.get("tipo_venda", ""),
+            sale.get("produto_id", "")
         ])
 
-    # Escreve tudo de uma vez (evita limite de cota)
-    sheet.append_rows(rows)
-    print(f"✅ {len(rows)} vendas dos últimos 30 dias adicionadas à planilha!")
+    # Adiciona novos registros
+    if rows_to_update:
+        sheet.append_rows(rows_to_update)
+        print(f"✅ {len(rows_to_update)} novas vendas adicionadas!")
+
+    # 🔥 Remove transações mais antigas que 14 dias 🔥
+    fourteen_days_ago = (datetime.datetime.now() - datetime.timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
+    
+    filtered_existing_rows = [
+        row for row in existing_rows if row[3] >= fourteen_days_ago  # Verifica `data_transacao`
+    ]
+
+    # Se houverem transações antigas, atualiza a planilha sem elas
+    if len(filtered_existing_rows) != len(existing_rows):
+        print("🗑️ Removendo transações mais antigas que 14 dias...")
+        sheet.clear()
+        sheet.append_row(existing_headers)
+        sheet.append_rows(filtered_existing_rows)
+        print("✅ Planilha atualizada sem transações antigas!")
 
 # ============================================================
-# Execução automática a cada 30 minutos
+# Execução automática a cada 4 horas
 # ============================================================
 if __name__ == "__main__":
     while True:
         print("🔄 Atualizando planilha...")
-        update_sheet_30_days()
-        print("⏳ Aguardando 30 minutos para a próxima atualização...")
-        time.sleep(1800)  # Espera 1800 segundos (30 minutos)
+        update_sheet_14_days()
+        print("⏳ Aguardando 4 horas para a próxima atualização...")
+        time.sleep(14400)  # Espera 14400 segundos (4 horas)
