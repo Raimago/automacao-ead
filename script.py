@@ -39,7 +39,7 @@ except Exception as e:
 # ============================================================
 def get_sales_last_14_days():
     all_sales = []
-    limit = 50  # Inicialmente limitamos para evitar travamento
+    limit = 50  # Limite reduzido para testar
     offset = 0
 
     # Calcula a data de hoje e 14 dias atrás
@@ -55,11 +55,16 @@ def get_sales_last_14_days():
         }
 
         print(f"🌐 Consultando API: {url}")
-        
+
         try:
-            response = requests.get(url, headers=headers, timeout=15)  # Timeout de 15s
-            response.raise_for_status()  # Verifica se a requisição teve erro
+            response = requests.get(url, headers=headers, timeout=15)  # Timeout de 15 segundos
+            response.raise_for_status()  # Levanta erro se a resposta for ruim
             data = response.json()
+            print(f"📩 Resposta da API recebida (Status {response.status_code})")
+            print(json.dumps(data, indent=4, ensure_ascii=False))  # Exibir resposta da API para debug
+        except requests.exceptions.Timeout:
+            print("❌ ERRO: A API demorou muito para responder (Timeout).")
+            break
         except requests.exceptions.RequestException as e:
             print(f"❌ ERRO na requisição da API: {e}")
             break
@@ -120,59 +125,11 @@ def get_sales_last_14_days():
     return all_sales
 
 # ============================================================
-# Função para atualizar a planilha do Google Sheets
-# ============================================================
-def update_sheet_14_days():
-    print("📄 Atualizando Google Sheets...")
-    sales = get_sales_last_14_days()
-
-    if not sales:
-        print("🚫 Nenhuma venda encontrada nos últimos 14 dias.")
-        return
-
-    print(f"🔢 Total de vendas filtradas: {len(sales)}")
-
-    # Lê a planilha atual
-    existing_data = sheet.get_all_values()
-    existing_headers = existing_data[0] if existing_data else []
-    existing_rows = existing_data[1:] if len(existing_data) > 1 else []
-
-    # Se a planilha estiver vazia, cria cabeçalhos
-    if not existing_headers:
-        headers = [
-            "Vendas ID", "Transação ID", "Produto ID", "Valor Líquido",
-            "Data Conclusão", "Tipo Pagamento", "Status Transação",
-            "Aluno ID", "Nome", "Email", "Gateway"
-        ]
-        sheet.append_row(headers)
-
-    # Previne duplicatas
-    existing_transactions = {row[1]: row for row in existing_rows}  
-
-    rows_to_update = []
-    for sale in sales:
-        transacao_id = sale.get("transacao_id", "")
-
-        if transacao_id in existing_transactions:
-            continue
-
-        rows_to_update.append([
-            sale.get("vendas_id"), sale.get("transacao_id"), sale.get("produto_id"),
-            sale.get("valor_liquido"), sale.get("data_conclusao"), sale.get("tipo_pagamento"),
-            sale.get("status_transacao"), sale.get("aluno_id"), sale.get("nome"),
-            sale.get("email"), sale.get("gateway")
-        ])
-
-    if rows_to_update:
-        sheet.append_rows(rows_to_update)
-        print(f"✅ {len(rows_to_update)} novas vendas adicionadas!")
-
-# ============================================================
 # Execução automática a cada 4 horas
 # ============================================================
 if __name__ == "__main__":
     while True:
         print("🔄 Iniciando atualização...")
-        update_sheet_14_days()
+        get_sales_last_14_days()
         print("⏳ Aguardando 4 horas para a próxima atualização...")
         time.sleep(14400)  # Espera 14400 segundos (4 horas)
