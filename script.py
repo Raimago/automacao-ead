@@ -36,10 +36,9 @@ except Exception as e:
 # ============================================================
 # 3) FUNÇÃO PARA BUSCAR TRANSAÇÕES DE UM DIA ESPECÍFICO
 # ============================================================
-def fetch_transactions_for_day(day_str):
+def fetch_transactions_for_day(day_str, tipo_pagamento=[1, 2], status_transacao=2, gateway=6):
     """
-    Recebe uma data no formato 'YYYY-MM-DD' e busca todas as transações desse dia.
-    Realiza paginação caso necessário.
+    Busca transações de um dia específico usando data_transacao como parâmetro.
     """
     day_sales = []
     limit = 100  # Aumentei o limite para buscar mais registros por página
@@ -52,7 +51,7 @@ def fetch_transactions_for_day(day_str):
             f"&offset={offset}"
             f"&data_inicio={day_str}"
             f"&data_fim={day_str}"
-            f"&order_by=data_conclusao&sort=asc"
+            f"&order_by=data_transacao&sort=asc"
         )
         headers = {
             "x-auth-token": EAD_API_KEY,
@@ -75,26 +74,25 @@ def fetch_transactions_for_day(day_str):
             break
 
         for sale in current_sales:
-            data_conclusao_str = sale.get("data_conclusao")
-            if not data_conclusao_str:
+            data_transacao_str = sale.get("data_transacao")
+            if not data_transacao_str:
                 continue
 
             try:
-                # Verifica se a data está no formato esperado
-                datetime.datetime.strptime(data_conclusao_str, "%Y-%m-%d %H:%M:%S")
+                datetime.datetime.strptime(data_transacao_str, "%Y-%m-%d %H:%M:%S")
             except Exception:
                 continue
 
-            # Aplica os filtros: tipo_pagamento in [1,2], status_transacao == 2, gateway == 6
-            if (sale.get("tipo_pagamento") in [1, 2] and
-                sale.get("status_transacao") == 2 and
-                sale.get("gateway") == 6):
+            # Aplica os filtros personalizáveis
+            if (sale.get("tipo_pagamento") in tipo_pagamento and
+                sale.get("status_transacao") == status_transacao and
+                sale.get("gateway") == gateway):
                 day_sales.append([
                     sale.get("vendas_id"),
                     sale.get("transacao_id"),
                     sale.get("produto_id"),
                     sale.get("valor_liquido"),
-                    sale.get("data_conclusao"),
+                    sale.get("data_transacao"),  # Usando data_transacao aqui
                     sale.get("tipo_pagamento"),
                     sale.get("status_transacao"),
                     sale.get("aluno_id"),
@@ -103,7 +101,6 @@ def fetch_transactions_for_day(day_str):
                     sale.get("gateway"),
                 ])
 
-        # Se a quantidade de registros recebidos for menor que o limite, encerra a paginação
         if len(current_sales) < limit:
             break
 
@@ -115,7 +112,7 @@ def fetch_transactions_for_day(day_str):
 # ============================================================
 # 4) FUNÇÃO PARA BUSCAR TRANSAÇÕES DOS ÚLTIMOS 14 DIAS (DIA A DIA)
 # ============================================================
-def get_sales_last_14_days_by_day():
+def get_sales_last_14_days_by_day(tipo_pagamento=[1, 2], status_transacao=2, gateway=6):
     """
     Busca transações dos últimos 14 dias, dia a dia.
     """
@@ -127,7 +124,7 @@ def get_sales_last_14_days_by_day():
     while current_date <= today:
         day_str = current_date.strftime("%Y-%m-%d")
         print(f"📆 Processando dia: {day_str}")
-        day_sales = fetch_transactions_for_day(day_str)
+        day_sales = fetch_transactions_for_day(day_str, tipo_pagamento, status_transacao, gateway)
         print(f"✅ {len(day_sales)} transações encontradas para {day_str}")
         all_sales.extend(day_sales)
         current_date += datetime.timedelta(days=1)
@@ -143,13 +140,13 @@ def update_google_sheets(sales_data):
     """
     print("📊 Atualizando planilha do Google Sheets...")
 
-    # Ordena as vendas pela data_conclusao (coluna 5, índice 4) em ordem cronológica
+    # Ordena as vendas pela data_transacao (coluna 5, índice 4) em ordem cronológica
     sales_data.sort(key=lambda row: datetime.datetime.strptime(row[4], "%Y-%m-%d %H:%M:%S"))
 
     try:
         sheet.clear()  # Limpa a planilha antes de adicionar novos dados
         headers = [
-            "vendas_id", "transacao_id", "produto_id", "valor_liquido", "data_conclusao",
+            "vendas_id", "transacao_id", "produto_id", "valor_liquido", "data_transacao",
             "tipo_pagamento", "status_transacao", "aluno_id", "nome", "email", "gateway"
         ]
         sheet.append_row(headers)  # Adiciona os cabeçalhos
