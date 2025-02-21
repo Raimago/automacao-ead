@@ -10,7 +10,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # 1) CARREGANDO VARIÁVEIS DE AMBIENTE
 # ============================================================
 EAD_API_URL = "https://ead.conhecimentointegrado.com.br/api/1/sales"
-EAD_API_KEY = os.getenv("EAD_API_KEY")                # Chave da API
+EAD_API_KEY = os.getenv("EAD_API_KEY")                # Chave da API EAD
 SHEET_ID = os.getenv("SHEET_ID")                      # ID da planilha do Google Sheets
 GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Conteúdo do credenciais.json
 
@@ -159,16 +159,25 @@ def get_sales_last_14_days():
     return all_sales
 
 # ============================================================
-# 4) FUNÇÃO PARA ATUALIZAR O GOOGLE SHEETS
+# 4) FUNÇÃO PARA ATUALIZAR O GOOGLE SHEETS (ordenando a data)
 # ============================================================
 def update_google_sheets(sales_data):
     """
     - Limpa a planilha e insere as vendas filtradas.
+    - Ordena as vendas pela data_conclusao (coluna 5, índice 4).
     - Se quiser manter histórico, basta remover o sheet.clear().
     """
     print("📊 Atualizando planilha do Google Sheets...")
+
+    # 1) Ordena a lista de vendas pela data_conclusao (índice 4)
+    #    Da mais recente (reverse=True) para a mais antiga.
+    sales_data.sort(
+        key=lambda row: datetime.datetime.strptime(row[4], "%Y-%m-%d %H:%M:%S"),
+        reverse=True
+    )
+
     try:
-        # Limpa a planilha (opcional; se quiser manter histórico, remova esta linha)
+        # Limpa a planilha (remova se quiser manter histórico)
         sheet.clear()
 
         # Cria cabeçalhos
@@ -178,10 +187,10 @@ def update_google_sheets(sales_data):
         ]
         sheet.append_row(headers)
 
-        # Adiciona linha a linha
+        # Adiciona as vendas
         if sales_data:
             sheet.append_rows(sales_data)
-            print(f"✅ {len(sales_data)} vendas adicionadas à planilha!")
+            print(f"✅ {len(sales_data)} vendas adicionadas à planilha (ordenadas por data)!")
         else:
             print("⚠️ Nenhuma venda para adicionar na planilha.")
     except Exception as e:
