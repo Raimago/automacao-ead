@@ -3,15 +3,16 @@ import json
 import requests
 import datetime
 import gspread
+import time
 from oauth2client.service_account import ServiceAccountCredentials
 
 # ============================================================
 # Configurações da API e da planilha
 # ============================================================
 EAD_API_URL = "https://ead.conhecimentointegrado.com.br/api/1/sales"
-EAD_API_KEY = os.getenv("EAD_API_KEY")         # Chave da API (GitHub Secret ou variável de ambiente)
+EAD_API_KEY = os.getenv("EAD_API_KEY")         # Chave da API
 SHEET_ID = os.getenv("SHEET_ID")               # ID da planilha do Google Sheets
-GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Conteúdo JSON das credenciais
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Credenciais JSON
 
 # ============================================================
 # Verificação das credenciais necessárias
@@ -67,26 +68,30 @@ def get_sales_last_30_days():
 
         data = response.json()
 
-        # Verifica se a resposta contém "data", caso contrário, é um erro
+        # Exibe a estrutura exata da API (apenas na primeira iteração)
+        if offset == 0:
+            print("📌 Estrutura da API:")
+            print(json.dumps(data, indent=4, ensure_ascii=False))
+
+        # Verifica se a resposta contém "data"
         if not isinstance(data, dict) or "data" not in data:
             print(f"⚠️ ERRO: Resposta inesperada da API → {data}")
             break
 
         current_sales = data["data"]
 
-        # Verifica se realmente há transações
+        # Verifica se há transações e se são do tipo dicionário
         if not isinstance(current_sales, list) or not current_sales:
             print("🚫 Nenhuma venda encontrada ou estrutura inválida.")
             break
 
-        # Filtra apenas objetos do tipo dicionário (evita erro 'get' em strings)
         filtered_sales = [sale for sale in current_sales if isinstance(sale, dict)]
         all_sales.extend(filtered_sales)
 
         print(f"📌 OFFSET {offset} → Recebidas {len(filtered_sales)} vendas.")
         offset += limit
 
-    # Ordenação segura (evita erro caso existam valores inválidos)
+    # Ordenação segura para evitar erros
     all_sales.sort(key=lambda x: x.get("data_transacao", ""), reverse=True)
 
     return all_sales
@@ -100,41 +105,87 @@ def update_sheet_30_days():
         print("🚫 Nenhuma venda encontrada nos últimos 30 dias.")
         return
 
-    # Limpa a aba (opcional) para evitar duplicados
+    # Limpa a aba antes de escrever os dados
     sheet.clear()
     print("📝 Planilha limpa antes de escrever dados atualizados.")
 
-    # Cabeçalhos
+    # Cabeçalhos - Agora inclui TODOS os campos da API
     headers = [
         "ID Venda",
         "Transação",
         "Produto",
-        "Valor Pago",
+        "Valor",
         "Valor Líquido",
         "Taxas",
         "Cupom",
+        "Lucro EAD",
+        "Nome Afiliado",
+        "Lucro Afiliado",
         "Data Transação",
-        "Status",
+        "Data Conclusão",
+        "Tipo Pagamento",
+        "Status Transação",
+        "Aluno ID",
         "Nome Aluno",
         "Email",
+        "Faturamento Nome",
+        "Faturamento Email",
+        "Faturamento Documento",
+        "Faturamento Telefone",
+        "Faturamento Endereço",
+        "Faturamento Número",
+        "Faturamento Complemento",
+        "Faturamento Bairro",
+        "Faturamento CEP",
+        "Faturamento Cidade",
+        "Faturamento UF",
+        "Vendedor ID",
+        "Nome Vendedor",
+        "Tipo Venda",
+        "Gateway",
+        "Origem",
+        "UTMs URL"
     ]
     sheet.append_row(headers)
 
-    # Monta as linhas (ajuste conforme a estrutura da API)
+    # Monta as linhas com todos os campos
     rows = []
     for sale in sales:
         rows.append([
             sale.get("vendas_id", ""),
             sale.get("transacao_id", ""),
             sale.get("produto_id", ""),
-            sale.get("valor_pago", ""),
+            sale.get("valor", ""),
             sale.get("valor_liquido", ""),
             sale.get("taxas", ""),
             sale.get("cupom", ""),
+            sale.get("lucro_ead", ""),
+            sale.get("nome_afiliado", ""),
+            sale.get("lucro_afiliado", ""),
             sale.get("data_transacao", ""),
+            sale.get("data_conclusao", ""),
+            sale.get("tipo_pagamento", ""),
             sale.get("status_transacao", ""),
+            sale.get("aluno_id", ""),
             sale.get("nome_aluno", ""),
             sale.get("email", ""),
+            sale.get("faturamento_nome", ""),
+            sale.get("faturamento_email", ""),
+            sale.get("faturamento_documento", ""),
+            sale.get("faturamento_telefone", ""),
+            sale.get("faturamento_endereco", ""),
+            sale.get("faturamento_numero", ""),
+            sale.get("faturamento_complemento", ""),
+            sale.get("faturamento_bairro", ""),
+            sale.get("faturamento_cep", ""),
+            sale.get("faturamento_cidade", ""),
+            sale.get("faturamento_uf", ""),
+            sale.get("vendedor_id", ""),
+            sale.get("nome_vendedor", ""),
+            sale.get("tipo_venda", ""),
+            sale.get("gateway", ""),
+            sale.get("origem", ""),
+            sale.get("utms_url", "")
         ])
 
     # Escreve tudo de uma vez (evita limite de cota)
@@ -144,8 +195,6 @@ def update_sheet_30_days():
 # ============================================================
 # Execução automática a cada 30 minutos
 # ============================================================
-import time
-
 if __name__ == "__main__":
     while True:
         print("🔄 Atualizando planilha...")
