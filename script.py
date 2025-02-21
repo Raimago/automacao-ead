@@ -39,7 +39,7 @@ except Exception as e:
 # ============================================================
 def get_sales_last_14_days():
     all_sales = []
-    limit = 10  # Reduzindo para 10 itens para testar e evitar sobrecarga
+    limit = 10  # Reduzido para debug mais rápido
     offset = 0
 
     # Calcula a data de hoje e 14 dias atrás
@@ -61,29 +61,29 @@ def get_sales_last_14_days():
         print(f"🌐 Consultando API: {url}")
 
         try:
-            response = requests.get(url, headers=headers, timeout=15)  # Timeout de 15 segundos
-            response.raise_for_status()  # Verifica erros na resposta
+            start_time = time.time()  # Marca o tempo antes da requisição
+            response = requests.get(url, headers=headers, timeout=10)  # Timeout de 10 segundos
+            end_time = time.time()  # Marca o tempo após resposta
+            
+            response.raise_for_status()  # Levanta erro se houver problema
             data = response.json()
-            print(f"📩 Resposta da API recebida (Status {response.status_code})")
-            print(json.dumps(data, indent=4, ensure_ascii=False))  # Exibir resposta da API para debug
+            
+            print(f"📩 Resposta da API recebida (Status {response.status_code}) em {end_time - start_time:.2f} segundos")
+            print(f"📊 Total de registros recebidos: {len(data.get('rows', []))}")
         except requests.exceptions.Timeout:
-            print("❌ ERRO: A API demorou muito para responder (Timeout).")
-            break
+            print("❌ ERRO: A API demorou muito para responder (Timeout de 10s). Tentando novamente...")
+            time.sleep(5)  # Espera 5 segundos antes de tentar novamente
+            continue  # Recomeça o loop
         except requests.exceptions.RequestException as e:
             print(f"❌ ERRO na requisição da API: {e}")
             break
 
-        # Verifica se a resposta contém "data"
-        if not isinstance(data, dict) or "data" not in data:
-            print(f"⚠️ ERRO: Resposta inesperada da API → {data}")
-            break
-
-        current_sales = data["data"]
-        print(f"📊 Dados da API: {len(current_sales)} transações encontradas.")
+        # Verifica se a resposta contém "rows"
+        current_sales = data.get("rows", [])
 
         # Verifica se há transações
-        if not isinstance(current_sales, list) or not current_sales:
-            print("🚫 Nenhuma venda encontrada ou estrutura inválida.")
+        if not current_sales:
+            print("🚫 Nenhuma venda encontrada ou fim dos registros.")
             break
 
         # Aplica o filtro e mantém apenas os campos necessários
@@ -98,7 +98,7 @@ def get_sales_last_14_days():
                 print(f"⚠️ Ignorando venda com data inválida: {data_conclusao_str}")
                 continue  # Pula se a data estiver errada
 
-            # Aplica os filtros
+            # Aplica os filtros corretos
             if (
                 sale.get("tipo_pagamento") in [1, 2] and
                 sale.get("status_transacao") == 2 and
@@ -121,11 +121,13 @@ def get_sales_last_14_days():
 
         all_sales.extend(filtered_sales)
         print(f"📌 OFFSET {offset} → Vendas filtradas: {len(filtered_sales)}")
-        offset += limit
-
-        # Se nenhuma venda for retornada, interrompe o loop
-        if len(filtered_sales) < limit:
+        
+        # Se o número de vendas retornadas for menor que o limite, interrompe
+        if len(current_sales) < limit:
+            print("✅ Todos os registros foram processados!")
             break
+
+        offset += limit  # Avança para a próxima página de resultados
 
     return all_sales
 
@@ -135,6 +137,7 @@ def get_sales_last_14_days():
 if __name__ == "__main__":
     while True:
         print("🔄 Iniciando atualização...")
-        get_sales_last_14_days()
+        vendas = get_sales_last_14_days()
+        print(f"✅ Total de vendas processadas: {len(vendas)}")
         print("⏳ Aguardando 4 horas para a próxima atualização...")
         time.sleep(14400)  # Espera 14400 segundos (4 horas)
