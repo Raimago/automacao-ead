@@ -38,6 +38,8 @@ except Exception as e:
 # Função para buscar e filtrar as transações dos últimos 14 dias
 # ============================================================
 def get_sales_last_14_days():
+    print("🔍 Iniciando busca de vendas nos últimos 14 dias...")
+    
     all_sales = []
     limit = 10
     offset = 0
@@ -52,6 +54,7 @@ def get_sales_last_14_days():
     data_fim = today.strftime("%Y-%m-%d")
 
     while True:
+        print(f"📌 Buscando vendas com OFFSET {offset}...")
         url = f"{EAD_API_URL}?paginate=1&limit={limit}&offset={offset}&data_inicio={data_inicio}&data_fim={data_fim}"
 
         headers = {
@@ -123,7 +126,7 @@ def get_sales_last_14_days():
                 ])
 
         all_sales.extend(filtered_sales)
-        print(f"📌 OFFSET {offset} → Vendas filtradas: {len(filtered_sales)}")
+        print(f"✅ OFFSET {offset} → Vendas filtradas: {len(filtered_sales)}")
 
         if len(current_sales) < limit:
             print("✅ Todos os registros foram processados!")
@@ -138,36 +141,19 @@ def get_sales_last_14_days():
     return all_sales
 
 # ============================================================
-# Função para atualizar o Google Sheets
-# ============================================================
-def update_sheet_14_days():
-    sales = get_sales_last_14_days()
-    if not sales:
-        print("🚫 Nenhuma venda válida encontrada nos últimos 14 dias.")
-        return
-
-    # Lê a planilha atual
-    existing_data = sheet.get_all_values()
-    existing_headers = existing_data[0] if existing_data else []
-
-    # Se a planilha estiver vazia, cria cabeçalhos
-    if not existing_headers:
-        headers = [
-            "Vendas ID", "Transação ID", "Produto ID", "Valor Líquido", "Data Conclusão",
-            "Tipo Pagamento", "Status Transação", "Aluno ID", "Nome", "Email", "Gateway"
-        ]
-        sheet.append_row(headers)
-
-    # Adiciona novas vendas
-    sheet.append_rows(sales)
-    print(f"✅ {len(sales)} novas vendas adicionadas ao Google Sheets!")
-
-# ============================================================
 # Execução automática a cada 4 horas
 # ============================================================
 if __name__ == "__main__":
+    print("🚀 Iniciando execução do script...")
+    
     while True:
-        print("🔄 Iniciando atualização...")
-        update_sheet_14_days()
+        print("🔄 Iniciando atualização da planilha...")
+        vendas = get_sales_last_14_days()
+
+        if vendas:
+            print(f"✅ {len(vendas)} vendas processadas com sucesso!")
+        else:
+            print("⚠️ Nenhuma venda válida encontrada.")
+
         print("⏳ Aguardando 4 horas para a próxima atualização...")
-        time.sleep(14400)
+        time.sleep(14400)  # Espera 4 horas
