@@ -39,7 +39,7 @@ except Exception as e:
 # ============================================================
 def get_sales_last_14_days():
     all_sales = []
-    limit = 50  # Reduzindo o limite para testar mais rápido
+    limit = 10  # Reduzindo para 10 itens para testar e evitar sobrecarga
     offset = 0
 
     # Calcula a data de hoje e 14 dias atrás
@@ -65,6 +65,7 @@ def get_sales_last_14_days():
             response.raise_for_status()  # Verifica erros na resposta
             data = response.json()
             print(f"📩 Resposta da API recebida (Status {response.status_code})")
+            print(json.dumps(data, indent=4, ensure_ascii=False))  # Exibir resposta da API para debug
         except requests.exceptions.Timeout:
             print("❌ ERRO: A API demorou muito para responder (Timeout).")
             break
@@ -78,6 +79,7 @@ def get_sales_last_14_days():
             break
 
         current_sales = data["data"]
+        print(f"📊 Dados da API: {len(current_sales)} transações encontradas.")
 
         # Verifica se há transações
         if not isinstance(current_sales, list) or not current_sales:
@@ -96,7 +98,7 @@ def get_sales_last_14_days():
                 print(f"⚠️ Ignorando venda com data inválida: {data_conclusao_str}")
                 continue  # Pula se a data estiver errada
 
-            # Aplica os filtros corretos
+            # Aplica os filtros
             if (
                 sale.get("tipo_pagamento") in [1, 2] and
                 sale.get("status_transacao") == 2 and
