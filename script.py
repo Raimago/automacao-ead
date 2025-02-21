@@ -6,22 +6,22 @@ import time
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+# ============================================================
+# 1) CARREGANDO VARIÁVEIS DE AMBIENTE
+# ============================================================
 EAD_API_URL = "https://ead.conhecimentointegrado.com.br/api/1/sales"
-EAD_API_KEY = os.getenv("EAD_API_KEY")
-SHEET_ID = os.getenv("SHEET_ID")
-GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
+EAD_API_KEY = os.getenv("EAD_API_KEY")                # Chave da API EAD
+SHEET_ID = os.getenv("SHEET_ID")                      # ID da planilha do Google Sheets
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Conteúdo do credenciais.json
 
-# Não vamos usar um limite fixo de iterações
-# MAX_ITERACOES = 100
-
-# Configurações de retry
-MAX_RETRIES = 5
-INITIAL_DELAY = 5  # segundos
-
-# Autenticação no Google Sheets
+# ============================================================
+# 2) AUTENTICAÇÃO NO GOOGLE SHEETS
+# ============================================================
 print("🔑 Autenticando no Google Sheets...")
+
 if not GOOGLE_CREDENTIALS_JSON:
-    raise ValueError("❌ ERRO: A variável GOOGLE_CREDENTIALS_JSON não está definida!")
+    raise ValueError("❌ ERRO: A variável de ambiente GOOGLE_CREDENTIALS_JSON está vazia ou não foi definida!")
+
 try:
     creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -32,6 +32,9 @@ try:
 except Exception as e:
     raise ValueError(f"❌ ERRO ao conectar ao Google Sheets: {e}")
 
+# ============================================================
+# 3) FUNÇÃO PARA BUSCAR E FILTRAR TRANSAÇÕES (ÚLTIMOS 14 DIAS)
+# ============================================================
 def get_sales_last_14_days():
     print("🔍 Iniciando busca de vendas nos últimos 14 dias...")
 
@@ -48,7 +51,6 @@ def get_sales_last_14_days():
 
     while True:
         print(f"📌 Buscando vendas com OFFSET {offset}...")
-
         url = (
             f"{EAD_API_URL}?paginate=1"
             f"&limit={limit}"
@@ -62,32 +64,27 @@ def get_sales_last_14_days():
             "accept": "application/json"
         }
 
-        # Implementa retries com exponential backoff
-        retries = 0
-        while retries < MAX_RETRIES:
-            try:
-                start_time = time.time()
-                response = requests.get(url, headers=headers, timeout=10)
-                end_time = time.time()
-                response.raise_for_status()
-                data = response.json()
-                print(f"📩 Resposta da API (Status {response.status_code}) em {end_time - start_time:.2f} segundos")
-                break  # Sai do loop de retries se a requisição der certo
-            except requests.exceptions.Timeout:
-                retries += 1
-                delay = INITIAL_DELAY * (2 ** (retries - 1))
-                print(f"❌ Timeout. Tentando novamente em {delay} segundos... ({retries}/{MAX_RETRIES})")
-                time.sleep(delay)
-            except requests.exceptions.RequestException as e:
-                print(f"❌ ERRO na requisição da API: {e}")
-                return all_sales  # Encerra a função em caso de erro crítico
+        print(f"🌐 Consultando API: {url}")
 
-        # Se excedeu os retries, encerra a busca
-        if retries == MAX_RETRIES:
-            print("❌ Número máximo de tentativas alcançado. Encerrando a busca.")
+        try:
+            start_time = time.time()
+            response = requests.get(url, headers=headers, timeout=10)
+            end_time = time.time()
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            print(f"📩 Resposta da API (Status {response.status_code}) em {end_time - start_time:.2f} segundos")
+            current_sales = data.get("rows", [])
+            print(f"📊 Total de registros recebidos: {len(current_sales)}")
+        except requests.exceptions.Timeout:
+            print("❌ ERRO: A API demorou muito para responder. Tentando novamente em 5s...")
+            time.sleep(5)
+            continue
+        except requests.exceptions.RequestException as e:
+            print(f"❌ ERRO na requisição da API: {e}")
             break
 
-        current_sales = data.get("rows", [])
         if not current_sales:
             print("🚫 Nenhuma venda encontrada ou fim dos registros.")
             break
@@ -103,6 +100,7 @@ def get_sales_last_14_days():
             except (TypeError, ValueError):
                 total_ignoradas += 1
                 continue
+
             if (
                 sale.get("tipo_pagamento") in [1, 2] and
                 sale.get("status_transacao") == 2 and
@@ -125,10 +123,25 @@ def get_sales_last_14_days():
 
         all_sales.extend(filtered_sales)
         print(f"✅ OFFSET {offset} → Vendas filtradas nesta página: {len(filtered_sales)}")
-        
-        # Se a quantidade retornada for menor que o limit, então chegamos ao fim
+
+        # Se o número de registros recebidos for menor que o limite, encerra a busca.
         if len(current_sales) < limit:
-            print("✅ Todos os registros foram processados!")
+            print("✅ Todos os registros foram processados (última página).")
+            break
+
+        # Se o último registro do lote possuir data_conclusao válida e for mais antigo que 14 dias, encerra a busca.
+        last_date = None
+        # Percorre os registros em ordem reversa para encontrar um com data válida.
+        for sale in reversed(current_sales):
+            date_str = sale.get("data_conclusao")
+            if date_str:
+                try:
+                    last_date = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                    break
+                except:
+                    continue
+        if last_date and last_date < fourteen_days_ago:
+            print("⏹️ Última transação do lote é mais antiga que 14 dias. Encerrando a busca.")
             break
 
         offset += limit
@@ -139,15 +152,20 @@ def get_sales_last_14_days():
     print(f"   ⚠️ Vendas ignoradas (sem data_conclusao ou inválidas): {total_ignoradas}")
     return all_sales
 
+# ============================================================
+# 4) FUNÇÃO PARA ATUALIZAR O GOOGLE SHEETS (ordenando por data)
+# ============================================================
 def update_google_sheets(sales_data):
     print("📊 Atualizando planilha do Google Sheets...")
-    # Ordena as vendas pela data_conclusao (índice 4) em ordem decrescente (mais recentes primeiro)
+
+    # Ordena os dados pela data_conclusao (índice 4) em ordem decrescente
     sales_data.sort(
         key=lambda row: datetime.datetime.strptime(row[4], "%Y-%m-%d %H:%M:%S"),
         reverse=True
     )
+
     try:
-        sheet.clear()
+        sheet.clear()  # Limpa a planilha; remova se desejar manter histórico
         headers = [
             "vendas_id", "transacao_id", "produto_id", "valor_liquido", "data_conclusao",
             "tipo_pagamento", "status_transacao", "aluno_id", "nome", "email", "gateway"
@@ -161,6 +179,9 @@ def update_google_sheets(sales_data):
     except Exception as e:
         print(f"❌ ERRO ao atualizar o Google Sheets: {e}")
 
+# ============================================================
+# 5) EXECUÇÃO DO SCRIPT
+# ============================================================
 if __name__ == "__main__":
     print("🚀 Iniciando execução do script...")
     vendas_filtradas = get_sales_last_14_days()
