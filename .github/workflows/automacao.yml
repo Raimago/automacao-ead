@@ -1,9 +1,9 @@
 name: Automação EAD
 
 on:
-  workflow_dispatch:  # 🔹 Permite rodar manualmente
+  workflow_dispatch:  # Permite rodar manualmente
   schedule:
-    - cron: "*/5 * * * *"  # 🔹 Executa a cada 5 minutos
+    - cron: "0 */4 * * *"  # Executa a cada 4 horas
 
 jobs:
   executar-script:
