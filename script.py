@@ -96,17 +96,17 @@ def get_sales_last_14_days():
                 total_ignoradas += 1
                 continue
             try:
-                data_conclusao = datetime.datetime.strptime(data_conclusao_str, "%Y-%m-%d %H:%M:%S")
+                # Tenta converter a data; se falhar, descarta o registro
+                datetime.datetime.strptime(data_conclusao_str, "%Y-%m-%d %H:%M:%S")
             except (TypeError, ValueError):
                 total_ignoradas += 1
                 continue
 
-            # Aplica os filtros desejados
+            # Aplica os filtros (confia que a API já retornou somente transações dentro do período desejado)
             if (
                 sale.get("tipo_pagamento") in [1, 2] and
                 sale.get("status_transacao") == 2 and
-                sale.get("gateway") == 6 and
-                data_conclusao >= fourteen_days_ago
+                sale.get("gateway") == 6
             ):
                 filtered_sales.append([
                     sale.get("vendas_id"),
@@ -125,7 +125,6 @@ def get_sales_last_14_days():
         all_sales.extend(filtered_sales)
         print(f"✅ OFFSET {offset} → Vendas filtradas nesta página: {len(filtered_sales)}")
 
-        # Se o número de registros retornados for menor que o limite, encerra a busca.
         if len(current_sales) < limit:
             print("✅ Todos os registros foram processados!")
             break
@@ -144,15 +143,13 @@ def get_sales_last_14_days():
 def update_google_sheets(sales_data):
     print("📊 Atualizando planilha do Google Sheets...")
 
-    # Ordena as vendas pela data_conclusao (coluna 5, índice 4) em ordem cronológica (ascendente)
+    # Ordena as vendas pela data_conclusao (coluna 5, índice 4) em ordem cronológica (do mais antigo para o mais recente)
     sales_data.sort(
         key=lambda row: datetime.datetime.strptime(row[4], "%Y-%m-%d %H:%M:%S")
     )
 
     try:
-        # Limpa a planilha; remova se desejar manter histórico
-        sheet.clear()
-
+        sheet.clear()  # Limpa a planilha; remova se quiser manter histórico
         headers = [
             "vendas_id", "transacao_id", "produto_id", "valor_liquido", "data_conclusao",
             "tipo_pagamento", "status_transacao", "aluno_id", "nome", "email", "gateway"
