@@ -88,18 +88,16 @@ def get_sales_last_14_days():
 
         filtered_sales = []
         for sale in current_sales:
-            data_conclusao_str = sale.get("data_conclusao", "")
+            data_conclusao_str = sale.get("data_conclusao")
 
-            # Verifica se a data está correta
-            if data_conclusao_str is None:
-                print(f"⚠️ Venda ignorada: Transação ID {sale.get('transacao_id')} sem data_conclusao.")
+            # Ignorar vendas sem `data_conclusao`
+            if not data_conclusao_str:
                 total_ignoradas += 1
                 continue
 
             try:
                 data_conclusao = datetime.datetime.strptime(data_conclusao_str, "%Y-%m-%d %H:%M:%S")
             except (TypeError, ValueError):
-                print(f"⚠️ Venda ignorada: Transação ID {sale.get('transacao_id')} com data inválida: {data_conclusao_str}")
                 total_ignoradas += 1
                 continue
 
@@ -110,19 +108,19 @@ def get_sales_last_14_days():
                 sale.get("gateway") == 6 and
                 data_conclusao >= fourteen_days_ago
             ):
-                filtered_sales.append({
-                    "vendas_id": sale.get("vendas_id"),
-                    "transacao_id": sale.get("transacao_id"),
-                    "produto_id": sale.get("produto_id"),
-                    "valor_liquido": sale.get("valor_liquido"),
-                    "data_conclusao": sale.get("data_conclusao"),
-                    "tipo_pagamento": sale.get("tipo_pagamento"),
-                    "status_transacao": sale.get("status_transacao"),
-                    "aluno_id": sale.get("aluno_id"),
-                    "nome": sale.get("nome"),
-                    "email": sale.get("email"),
-                    "gateway": sale.get("gateway"),
-                })
+                filtered_sales.append([
+                    sale.get("vendas_id"),
+                    sale.get("transacao_id"),
+                    sale.get("produto_id"),
+                    sale.get("valor_liquido"),
+                    sale.get("data_conclusao"),
+                    sale.get("tipo_pagamento"),
+                    sale.get("status_transacao"),
+                    sale.get("aluno_id"),
+                    sale.get("nome"),
+                    sale.get("email"),
+                    sale.get("gateway"),
+                ])
 
         all_sales.extend(filtered_sales)
         print(f"📌 OFFSET {offset} → Vendas filtradas: {len(filtered_sales)}")
@@ -140,12 +138,36 @@ def get_sales_last_14_days():
     return all_sales
 
 # ============================================================
+# Função para atualizar o Google Sheets
+# ============================================================
+def update_sheet_14_days():
+    sales = get_sales_last_14_days()
+    if not sales:
+        print("🚫 Nenhuma venda válida encontrada nos últimos 14 dias.")
+        return
+
+    # Lê a planilha atual
+    existing_data = sheet.get_all_values()
+    existing_headers = existing_data[0] if existing_data else []
+
+    # Se a planilha estiver vazia, cria cabeçalhos
+    if not existing_headers:
+        headers = [
+            "Vendas ID", "Transação ID", "Produto ID", "Valor Líquido", "Data Conclusão",
+            "Tipo Pagamento", "Status Transação", "Aluno ID", "Nome", "Email", "Gateway"
+        ]
+        sheet.append_row(headers)
+
+    # Adiciona novas vendas
+    sheet.append_rows(sales)
+    print(f"✅ {len(sales)} novas vendas adicionadas ao Google Sheets!")
+
+# ============================================================
 # Execução automática a cada 4 horas
 # ============================================================
 if __name__ == "__main__":
     while True:
         print("🔄 Iniciando atualização...")
-        vendas = get_sales_last_14_days()
-        print(f"✅ Total de vendas processadas: {len(vendas)}")
+        update_sheet_14_days()
         print("⏳ Aguardando 4 horas para a próxima atualização...")
         time.sleep(14400)
