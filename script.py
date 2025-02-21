@@ -43,9 +43,11 @@ def get_sales_last_14_days():
     offset = 0
     total_ignoradas = 0
 
+    # Define o período de 14 dias
     today = datetime.datetime.now()
     fourteen_days_ago = today - datetime.timedelta(days=14)
 
+    # Define os parâmetros de data para a API
     data_inicio = fourteen_days_ago.strftime("%Y-%m-%d")
     data_fim = today.strftime("%Y-%m-%d")
 
@@ -70,10 +72,8 @@ def get_sales_last_14_days():
             start_time = time.time()
             response = requests.get(url, headers=headers, timeout=10)
             end_time = time.time()
-            
             response.raise_for_status()
             data = response.json()
-            
             print(f"📩 Resposta da API (Status {response.status_code}) em {end_time - start_time:.2f} segundos")
             current_sales = data.get("rows", [])
             print(f"📊 Total de registros recebidos: {len(current_sales)}")
@@ -101,6 +101,7 @@ def get_sales_last_14_days():
                 total_ignoradas += 1
                 continue
 
+            # Aplica os filtros desejados
             if (
                 sale.get("tipo_pagamento") in [1, 2] and
                 sale.get("status_transacao") == 2 and
@@ -124,24 +125,9 @@ def get_sales_last_14_days():
         all_sales.extend(filtered_sales)
         print(f"✅ OFFSET {offset} → Vendas filtradas nesta página: {len(filtered_sales)}")
 
-        # Se o número de registros recebidos for menor que o limite, encerra a busca.
+        # Se o número de registros retornados for menor que o limite, encerra a busca.
         if len(current_sales) < limit:
-            print("✅ Todos os registros foram processados (última página).")
-            break
-
-        # Se o último registro do lote possuir data_conclusao válida e for mais antigo que 14 dias, encerra a busca.
-        last_date = None
-        # Percorre os registros em ordem reversa para encontrar um com data válida.
-        for sale in reversed(current_sales):
-            date_str = sale.get("data_conclusao")
-            if date_str:
-                try:
-                    last_date = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                    break
-                except:
-                    continue
-        if last_date and last_date < fourteen_days_ago:
-            print("⏹️ Última transação do lote é mais antiga que 14 dias. Encerrando a busca.")
+            print("✅ Todos os registros foram processados!")
             break
 
         offset += limit
@@ -158,14 +144,15 @@ def get_sales_last_14_days():
 def update_google_sheets(sales_data):
     print("📊 Atualizando planilha do Google Sheets...")
 
-    # Ordena os dados pela data_conclusao (índice 4) em ordem decrescente
+    # Ordena as vendas pela data_conclusao (coluna 5, índice 4) em ordem cronológica (ascendente)
     sales_data.sort(
-        key=lambda row: datetime.datetime.strptime(row[4], "%Y-%m-%d %H:%M:%S"),
-        reverse=True
+        key=lambda row: datetime.datetime.strptime(row[4], "%Y-%m-%d %H:%M:%S")
     )
 
     try:
-        sheet.clear()  # Limpa a planilha; remova se desejar manter histórico
+        # Limpa a planilha; remova se desejar manter histórico
+        sheet.clear()
+
         headers = [
             "vendas_id", "transacao_id", "produto_id", "valor_liquido", "data_conclusao",
             "tipo_pagamento", "status_transacao", "aluno_id", "nome", "email", "gateway"
