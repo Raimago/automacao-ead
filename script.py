@@ -1,49 +1,42 @@
-import os
-import json
 import requests
 import datetime
-import gspread
 import time
+import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# ============================================================
-# Configurações da API e da planilha
-# ============================================================
+# ==============================
+# CONFIGURAÇÕES DA API E GOOGLE SHEETS
+# ==============================
 EAD_API_URL = "https://ead.conhecimentointegrado.com.br/api/1/sales"
-EAD_API_KEY = os.getenv("EAD_API_KEY")         # Chave da API
-SHEET_ID = os.getenv("SHEET_ID")               # ID da planilha do Google Sheets
-GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Credenciais JSON
+EAD_API_KEY = "SUA_CHAVE_AQUI"  # 🔥 Substitua pela chave real
+SHEET_ID = "SEU_SHEET_ID_AQUI"  # 🔥 Substitua pelo ID real
+MAX_ITERACOES = 100  # 🔥 Define um número máximo de chamadas à API
 
-# ============================================================
-# Verificação das credenciais necessárias
-# ============================================================
-if not GOOGLE_CREDENTIALS_JSON:
-    raise ValueError("ERRO: A variável GOOGLE_CREDENTIALS_JSON está vazia! Verifique seus Secrets.")
+# ==============================
+# AUTENTICAÇÃO NO GOOGLE SHEETS
+# ==============================
+print("🔑 Autenticando no Google Sheets...")
 
-# ============================================================
-# Autenticação no Google Sheets
-# ============================================================
 try:
-    print("🔑 Autenticando no Google Sheets...")
-    creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_name("credenciais.json", ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
     print("✅ Conexão com Google Sheets estabelecida!")
 except Exception as e:
-    raise ValueError(f"❌ ERRO ao conectar ao Google Sheets: {e}")
+    print(f"❌ ERRO: Falha ao conectar ao Google Sheets: {e}")
+    exit()
 
 # ============================================================
-# Função para buscar e filtrar as transações dos últimos 14 dias
+# FUNÇÃO PARA BUSCAR E FILTRAR TRANSAÇÕES VÁLIDAS (ÚLTIMOS 14 DIAS)
 # ============================================================
 def get_sales_last_14_days():
     print("🔍 Iniciando busca de vendas nos últimos 14 dias...")
-    
+
     all_sales = []
     limit = 10
     offset = 0
     total_ignoradas = 0
+    iteracoes = 0
 
     # Calcula a data de hoje e 14 dias atrás
     today = datetime.datetime.now()
@@ -53,8 +46,8 @@ def get_sales_last_14_days():
     data_inicio = fourteen_days_ago.strftime("%Y-%m-%d")
     data_fim = today.strftime("%Y-%m-%d")
 
-    while True:
-        print(f"📌 Buscando vendas com OFFSET {offset}...")
+    while iteracoes < MAX_ITERACOES:
+        print(f"📌 Buscando vendas com OFFSET {offset} (Iteração {iteracoes + 1}/{MAX_ITERACOES})...")
         url = f"{EAD_API_URL}?paginate=1&limit={limit}&offset={offset}&data_inicio={data_inicio}&data_fim={data_fim}"
 
         headers = {
@@ -133,6 +126,7 @@ def get_sales_last_14_days():
             break
 
         offset += limit
+        iteracoes += 1  # 🔥 Incrementa o contador de iterações
 
     print(f"🔍 Resumo da execução:")
     print(f"   ✅ Total de vendas filtradas: {len(all_sales)}")
@@ -141,19 +135,29 @@ def get_sales_last_14_days():
     return all_sales
 
 # ============================================================
-# Execução automática a cada 4 horas
+# FUNÇÃO PARA ATUALIZAR O GOOGLE SHEETS
 # ============================================================
-if __name__ == "__main__":
-    print("🚀 Iniciando execução do script...")
-    
-    while True:
-        print("🔄 Iniciando atualização da planilha...")
-        vendas = get_sales_last_14_days()
+def update_google_sheets(sales_data):
+    print("📊 Atualizando planilha do Google Sheets...")
+    try:
+        sheet.clear()  # Limpa a planilha antes de atualizar
+        sheet.append_row(["vendas_id", "transacao_id", "produto_id", "valor_liquido", "data_conclusao",
+                          "tipo_pagamento", "status_transacao", "aluno_id", "nome", "email", "gateway"])
+        for row in sales_data:
+            sheet.append_row(row)
+        print("✅ Planilha atualizada com sucesso!")
+    except Exception as e:
+        print(f"❌ ERRO ao atualizar o Google Sheets: {e}")
 
-        if vendas:
-            print(f"✅ {len(vendas)} vendas processadas com sucesso!")
-        else:
-            print("⚠️ Nenhuma venda válida encontrada.")
+# ==============================
+# EXECUÇÃO DO SCRIPT
+# ==============================
+print("🚀 Iniciando execução do script...")
+sales_data = get_sales_last_14_days()
 
-        print("⏳ Aguardando 4 horas para a próxima atualização...")
-        time.sleep(14400)  # Espera 4 horas
+if sales_data:
+    update_google_sheets(sales_data)
+else:
+    print("⚠️ Nenhuma venda válida encontrada nos últimos 14 dias.")
+
+print("✅ Script finalizado com sucesso!")
