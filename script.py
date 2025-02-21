@@ -39,15 +39,19 @@ except Exception as e:
 # ============================================================
 def get_sales_last_14_days():
     all_sales = []
-    limit = 50  # Limite reduzido para testar
+    limit = 50  # Reduzindo o limite para testar mais rápido
     offset = 0
 
     # Calcula a data de hoje e 14 dias atrás
     today = datetime.datetime.now()
     fourteen_days_ago = today - datetime.timedelta(days=14)
+    
+    # Formata datas para a API
+    data_inicio = fourteen_days_ago.strftime("%Y-%m-%d")
+    data_fim = today.strftime("%Y-%m-%d")
 
     while True:
-        url = f"{EAD_API_URL}?paginate=1&limit={limit}&offset={offset}"
+        url = f"{EAD_API_URL}?paginate=1&limit={limit}&offset={offset}&data_inicio={data_inicio}&data_fim={data_fim}"
 
         headers = {
             "x-auth-token": EAD_API_KEY,
@@ -58,10 +62,9 @@ def get_sales_last_14_days():
 
         try:
             response = requests.get(url, headers=headers, timeout=15)  # Timeout de 15 segundos
-            response.raise_for_status()  # Levanta erro se a resposta for ruim
+            response.raise_for_status()  # Verifica erros na resposta
             data = response.json()
             print(f"📩 Resposta da API recebida (Status {response.status_code})")
-            print(json.dumps(data, indent=4, ensure_ascii=False))  # Exibir resposta da API para debug
         except requests.exceptions.Timeout:
             print("❌ ERRO: A API demorou muito para responder (Timeout).")
             break
@@ -93,12 +96,12 @@ def get_sales_last_14_days():
                 print(f"⚠️ Ignorando venda com data inválida: {data_conclusao_str}")
                 continue  # Pula se a data estiver errada
 
-            # Aplica os filtros
+            # Aplica os filtros corretos
             if (
                 sale.get("tipo_pagamento") in [1, 2] and
                 sale.get("status_transacao") == 2 and
                 sale.get("gateway") == 6 and
-                data_conclusao >= fourteen_days_ago  # Filtro por data
+                data_conclusao >= fourteen_days_ago  # Garante que é dos últimos 14 dias
             ):
                 filtered_sales.append({
                     "vendas_id": sale.get("vendas_id"),
